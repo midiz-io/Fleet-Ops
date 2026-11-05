@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Wrench, Eye, EyeOff, Database } from "lucide-react";
+import { Wrench, Eye, EyeOff } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 
 const loginSchema = z.object({
@@ -161,17 +161,6 @@ export function Login() {
           </Form>
         </CardContent>
       </Card>
-
-      <div className="mt-4 text-center">
-        <a
-          href="/dbbackup"
-          className="text-xs text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/50 bg-card/40 hover:bg-card/80"
-        >
-          <Database className="w-3.5 h-3.5 text-primary" />
-          <span>System Backup & Database Reset</span>
-          <span className="font-mono text-[10px] text-muted-foreground/80">(/dbbackup)</span>
-        </a>
-      </div>
     </div>
   );
 }
