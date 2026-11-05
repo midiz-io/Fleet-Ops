@@ -2,11 +2,13 @@ import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl =
   (import.meta.env.VITE_SUPABASE_URL as string) ||
-  "https://mxqxmtvbahgsfrzwshdl.supabase.co";
+  "https://lojjkujccsbverkhjtpu.supabase.co";
 
 const supabaseAnonKey =
   (import.meta.env.VITE_SUPABASE_ANON_KEY as string) ||
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im14cXhtdHZiYWhnc2ZyendzaGRsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0MzYyMzksImV4cCI6MjA5MzAxMjIzOX0.khGshy_3IaNbtAWTYjk4Zi9xWfHNcMFkpC1iHI-YhaM";
+  (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string) ||
+  (import.meta.env.VITE_SUPABASE_PUBLISHBLE_KEY as string) ||
+  "sb_publishable_D2-jpx43LNJ3ayaKj38DuA_qcLQv8c8";
 
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error("Missing Supabase environment variables");

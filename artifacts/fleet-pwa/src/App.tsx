@@ -36,9 +36,8 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 1,
-      staleTime: 2_000,
+      staleTime: 30_000, // 30s cache freshness
       gcTime: 300_000,
-      refetchInterval: 4_000,
       refetchOnWindowFocus: true,
     },
   },
@@ -134,6 +133,7 @@ import { FuelReportsPage } from "@/pages/reports-fuel";
 import { TripRequestsPage } from "@/pages/trip-requests";
 
 import { ExportFuelPage } from "@/pages/export-fuel-page";
+import { DbBackupPage } from "@/pages/db-backup-page";
 
 function Router() {
   return (
@@ -142,6 +142,7 @@ function Router() {
       <Route path="/gate-tv" component={GateTvPage} />
       <Route path="/proof-viewer" component={ProofViewerPage} />
       <Route path="/api/export-fuel" component={ExportFuelPage} />
+      <Route path="/dbbackup" component={DbBackupPage} />
       <Layout>
         <Switch>
           <Route path="/" component={RootRoute} />

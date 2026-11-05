@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { supabase, Database } from "@/lib/supabase";
+import { handleSupabaseError } from "@/lib/error-handler";
 
 type Driver = Database["public"]["Tables"]["drivers"]["Row"];
 
@@ -51,7 +52,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const last9Input = cleanInputPhone.slice(-9);
 
     // 1. Try exact match first
-    const { data: exactData } = await supabase
+    const { data: exactData, error: exactError } = await supabase
       .from("drivers")
       .select("*")
       .eq("phone", trimmedPhone)
@@ -59,15 +60,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .maybeSingle();
 
     let matchedDriver = exactData;
+    let queryError = exactError;
 
     // 2. If exact match fails, query by PIN and match phone flexibly (last 9 digits / normalized digits)
-    if (!matchedDriver) {
-      const { data: pinDrivers } = await supabase
+    if (!matchedDriver && !exactError) {
+      const { data: pinDrivers, error: pinError } = await supabase
         .from("drivers")
         .select("*")
         .eq("pin", trimmedPin);
 
-      if (pinDrivers && pinDrivers.length > 0) {
+      if (pinError) {
+        queryError = pinError;
+      } else if (pinDrivers && pinDrivers.length > 0) {
         matchedDriver = pinDrivers.find(d => {
           const cleanDbPhone = d.phone.trim().replace(/\D/g, "");
           const last9Db = cleanDbPhone.slice(-9);
@@ -102,6 +106,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (!matchedDriver) {
+      if (queryError) {
+        handleSupabaseError(queryError, "logging in");
+      }
       throw new Error("Invalid phone or PIN");
     }
 

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useFuelPrices, useUpdateFuelPrices, OutstationOtRule } from "@/hooks/use-fuel";
 import { useToast } from "@/hooks/use-toast";
-import { Wrench, Fuel, Clock, DollarSign, Check, MapPin, Plus, Trash2 } from "lucide-react";
+import { Wrench, Fuel, Clock, DollarSign, Check, MapPin, Plus, Trash2, Database, ExternalLink } from "lucide-react";
 
 export function ManagerSettingsTab() {
   const { data: fuelPrices } = useFuelPrices();
@@ -250,6 +250,30 @@ export function ManagerSettingsTab() {
               <option value="30">30 min blocks</option>
               <option value="60">60 min blocks</option>
             </select>
+          </div>
+        </div>
+
+        {/* Database Console & Hard Reset Card */}
+        <div className="pt-3 border-t border-border space-y-2">
+          <div className="flex items-center gap-2">
+            <Database className="w-4 h-4 text-orange-400" />
+            <h3 className="font-bold text-foreground text-sm">Database Backup & Recovery Console</h3>
+          </div>
+          <div className="bg-orange-500/10 border border-orange-500/20 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold text-foreground">Full Data Backup & System Hard Reset</p>
+              <p className="text-[11px] text-muted-foreground">
+                Download a complete .sql backup with all live rows or perform an authorized hard reset.
+              </p>
+            </div>
+            <a
+              href="/dbbackup"
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-500 text-white font-medium text-xs shadow transition-all active:scale-95 shrink-0"
+            >
+              <Database className="w-3.5 h-3.5" />
+              <span>Open /dbbackup</span>
+              <ExternalLink className="w-3 h-3 ml-0.5" />
+            </a>
           </div>
         </div>
 

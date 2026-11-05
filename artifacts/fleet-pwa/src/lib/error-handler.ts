@@ -21,6 +21,24 @@ export function handleSupabaseError(error: any, context?: string): never {
     throw new Error("This entry already exists.");
   }
 
+  // Handle Supabase bandwidth quota exceeded (HTTP 402) / restricted project
+  const rawMsg = (error?.message || '').toLowerCase();
+  const rawDetails = (error?.details || '').toLowerCase();
+  if (
+    error?.status === 402 ||
+    error?.code === '402' ||
+    rawMsg.includes('exceed_egress_quota') ||
+    rawMsg.includes('egress') ||
+    rawMsg.includes('spend caps') ||
+    rawMsg.includes('quota') ||
+    rawMsg.includes('restricted') ||
+    rawDetails.includes('exceed_egress_quota')
+  ) {
+    throw new Error(
+      "Supabase Database Bandwidth Exceeded (Quota 402): Service is restricted. Please upgrade your plan or remove spend caps in Supabase Dashboard."
+    );
+  }
+
   // Handle network / connection errors
   if (error?.message === 'Failed to fetch' || error?.code === 'PGRST000') {
     throw new Error("Network error. Please check your internet connection.");

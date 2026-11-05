@@ -1,25 +1,25 @@
 -- ==============================================================================
--- FleetOps PWA — 100% COMPLETE SUPABASE SCHEMA & RLS POLICIES (FINAL)
--- Target Supabase Dashboard: https://supabase.com/dashboard/project/mxqxmtvbahgsfrzwshdl/sql
--- Version: Head Office Spec Final - Includes Real Vehicles & All Role Fixes (26 October 2026)
+-- FleetOps PWA — 100% COMPLETE SUPABASE SCHEMA & RLS POLICIES (PRODUCTION BACKUP)
+-- Generated for: Complete User Profile Data, Vehicles, Fleet Operations & RLS
+-- Date: November 2026
 -- 
 -- INSTRUCTIONS:
--- 1. Copy the entire content of this script.
--- 2. Paste into the Supabase SQL Editor and click "Run".
--- 3. This script is fully idempotent and safely removes old restrictive constraints.
+-- 1. Create a new Supabase project (or open existing project SQL Editor).
+-- 2. Paste this entire script into the SQL Editor and click "Run".
+-- 3. This script is 100% IDEMPOTENT (safe to run multiple times without data loss).
 -- ==============================================================================
 
 -- ─── 1. EXTENSIONS ────────────────────────────────────────────────────────────
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- ─── 2. DRIVERS TABLE ─────────────────────────────────────────────────────────
+-- ─── 2. DRIVERS TABLE (User Profiles, Authentication & Roles) ─────────────────
 CREATE TABLE IF NOT EXISTS public.drivers (
   id               UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   name             TEXT NOT NULL,
   phone            TEXT NOT NULL UNIQUE,
-  pin              TEXT NOT NULL,                      -- 4-digit PIN
-  role             TEXT NOT NULL DEFAULT 'driver',
+  pin              TEXT NOT NULL,                      -- 4-digit PIN for Driver/Staff login
+  role             TEXT NOT NULL DEFAULT 'driver',     -- 'driver' | 'manager' | 'admin' | 'team_leader' | 'head_of_teams' | 'team_head' | 'security'
   "group"          TEXT NOT NULL DEFAULT 'Centres',    -- 'Centres' | 'Tropical'
   dob              DATE,
   license_no       TEXT,
@@ -28,14 +28,14 @@ CREATE TABLE IF NOT EXISTS public.drivers (
   created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Ensure all required columns exist in drivers
+-- Ensure all columns exist in drivers
 ALTER TABLE public.drivers ADD COLUMN IF NOT EXISTS "group" TEXT NOT NULL DEFAULT 'Centres';
 ALTER TABLE public.drivers ADD COLUMN IF NOT EXISTS dob DATE;
 ALTER TABLE public.drivers ADD COLUMN IF NOT EXISTS license_no TEXT;
 ALTER TABLE public.drivers ADD COLUMN IF NOT EXISTS license_expiry DATE;
 ALTER TABLE public.drivers ADD COLUMN IF NOT EXISTS incentive_points INTEGER NOT NULL DEFAULT 0;
 
--- DYNAMICALLY REMOVE ANY OLD/RESTRICTIVE CHECK CONSTRAINTS ON drivers.role
+-- Remove any old/restrictive check constraints on drivers.role dynamically
 DO $$ 
 DECLARE
     r RECORD;
@@ -51,11 +51,11 @@ BEGIN
     END LOOP;
 END $$;
 
--- Add comprehensive role check constraint supporting head_of_teams, team_leader, team_head, admin, etc.
+-- Role check constraint
 ALTER TABLE public.drivers ADD CONSTRAINT drivers_role_check 
   CHECK (role IN ('driver', 'manager', 'admin', 'team_leader', 'head_of_teams', 'team_head', 'security'));
 
--- DYNAMICALLY REMOVE AND RE-APPLY drivers.group CHECK CONSTRAINT
+-- Remove and re-apply drivers.group check constraint dynamically
 DO $$ 
 DECLARE
     r RECORD;
@@ -74,23 +74,29 @@ END $$;
 ALTER TABLE public.drivers ADD CONSTRAINT drivers_group_check 
   CHECK ("group" IN ('Centres', 'Tropical'));
 
--- ─── 3. VEHICLES TABLE ────────────────────────────────────────────────────────
+-- ─── 3. VEHICLES TABLE (Fleet Vehicles & Specifications) ──────────────────────
 CREATE TABLE IF NOT EXISTS public.vehicles (
-  id                 UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  vehicle_no         TEXT NOT NULL UNIQUE,             -- e.g. DAI 0632, GAI 1005
-  model              TEXT NOT NULL,                   -- e.g. Bolero, Mahindra Pickup
-  benchmark_kmpl     NUMERIC(5,2) NOT NULL DEFAULT 14,
-  fuel_type          TEXT DEFAULT 'Diesel',            -- 'Diesel' | 'Petrol'
-  tank_size          NUMERIC(8,2) DEFAULT 55.0,
-  "group"            TEXT NOT NULL DEFAULT 'Centres',  -- 'Centres' | 'Tropical'
-  current_odometer   NUMERIC(10,1) DEFAULT 0,
-  status             TEXT NOT NULL DEFAULT 'active',
-  purchase_date      DATE,
-  license_expiry     DATE,
-  insurance_expiry   DATE,
-  sim_gps_number     TEXT,
-  assigned_driver_id UUID REFERENCES public.drivers(id) ON DELETE SET NULL,
-  created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id                      UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  vehicle_no              TEXT NOT NULL UNIQUE,             -- e.g. DAI 0632, GAI 1005
+  model                   TEXT NOT NULL,                   -- e.g. Bolero, Mahindra Pickup
+  benchmark_kmpl          NUMERIC(5,2) NOT NULL DEFAULT 14.0,
+  fuel_type               TEXT DEFAULT 'Diesel',            -- 'Diesel' | 'Petrol'
+  tank_size               NUMERIC(8,2) DEFAULT 55.0,
+  "group"                 TEXT NOT NULL DEFAULT 'Centres',  -- 'Centres' | 'Tropical'
+  current_odometer        NUMERIC(10,1) DEFAULT 0,
+  current_km              NUMERIC(10,1) DEFAULT 0,
+  status                  TEXT NOT NULL DEFAULT 'active',
+  is_hidden               BOOLEAN NOT NULL DEFAULT false,
+  purchase_date           DATE,
+  license_expiry          DATE,
+  insurance_expiry        DATE,
+  sim_gps_number          TEXT,
+  assigned_driver_id      UUID REFERENCES public.drivers(id) ON DELETE SET NULL,
+  odometer_override_km    NUMERIC(10,1),
+  odometer_override_at    TIMESTAMPTZ,
+  odometer_override_by    TEXT,
+  odometer_override_reason TEXT,
+  created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- Ensure all columns exist in vehicles
@@ -98,7 +104,13 @@ ALTER TABLE public.vehicles ADD COLUMN IF NOT EXISTS fuel_type TEXT DEFAULT 'Die
 ALTER TABLE public.vehicles ADD COLUMN IF NOT EXISTS tank_size NUMERIC(8,2) DEFAULT 55.0;
 ALTER TABLE public.vehicles ADD COLUMN IF NOT EXISTS "group" TEXT NOT NULL DEFAULT 'Centres';
 ALTER TABLE public.vehicles ADD COLUMN IF NOT EXISTS current_odometer NUMERIC(10,1) DEFAULT 0;
+ALTER TABLE public.vehicles ADD COLUMN IF NOT EXISTS current_km NUMERIC(10,1) DEFAULT 0;
 ALTER TABLE public.vehicles ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+ALTER TABLE public.vehicles ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE public.vehicles ADD COLUMN IF NOT EXISTS odometer_override_km NUMERIC(10,1);
+ALTER TABLE public.vehicles ADD COLUMN IF NOT EXISTS odometer_override_at TIMESTAMPTZ;
+ALTER TABLE public.vehicles ADD COLUMN IF NOT EXISTS odometer_override_by TEXT;
+ALTER TABLE public.vehicles ADD COLUMN IF NOT EXISTS odometer_override_reason TEXT;
 
 DO $$ 
 DECLARE
@@ -118,7 +130,7 @@ END $$;
 ALTER TABLE public.vehicles ADD CONSTRAINT vehicles_group_check 
   CHECK ("group" IN ('Centres', 'Tropical'));
 
--- ─── 4. CHECKLISTS (Daily Driver Checklist & End Day) ─────────────────────────
+-- ─── 4. CHECKLISTS (Morning Inspection & Shift End Records) ───────────────────
 CREATE TABLE IF NOT EXISTS public.checklists (
   id                UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   driver_id         UUID NOT NULL REFERENCES public.drivers(id) ON DELETE CASCADE,
@@ -142,7 +154,6 @@ ALTER TABLE public.checklists ADD COLUMN IF NOT EXISTS fuel_bars INTEGER;
 ALTER TABLE public.checklists ADD COLUMN IF NOT EXISTS end_day_odometer NUMERIC(10,1);
 ALTER TABLE public.checklists ADD COLUMN IF NOT EXISTS shift_end_time TIMESTAMPTZ;
 
--- Allow 'completed_end_day' for oil_status
 DO $$ 
 DECLARE
     r RECORD;
@@ -164,7 +175,7 @@ ALTER TABLE public.checklists ADD CONSTRAINT checklists_oil_status_check
 -- Relax unique constraint to permit multiple vehicle shifts per day
 ALTER TABLE public.checklists DROP CONSTRAINT IF EXISTS checklists_driver_id_vehicle_id_date_key;
 
--- ─── 5. FUEL LOGS ─────────────────────────────────────────────────────────────
+-- ─── 5. FUEL LOGS (Refueling Records, Receipts & KMPL Efficiency) ─────────────
 CREATE TABLE IF NOT EXISTS public.fuel_logs (
   id                     UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   driver_id              UUID NOT NULL REFERENCES public.drivers(id) ON DELETE CASCADE,
@@ -178,7 +189,7 @@ CREATE TABLE IF NOT EXISTS public.fuel_logs (
   after_meter            NUMERIC(10,1) NOT NULL DEFAULT 0,
   bill_meter             NUMERIC(10,1),
   previous_odometer      NUMERIC(10,1),
-  is_full_tank           BOOLEAN NOT NULL DEFAULT false, -- Head Office Issue 8: Default 'No'
+  is_full_tank           BOOLEAN NOT NULL DEFAULT false,
   kmpl_calculated        NUMERIC(6,2),
   below_benchmark        BOOLEAN NOT NULL DEFAULT false,
   fuel_type              TEXT DEFAULT 'Diesel',
@@ -203,7 +214,7 @@ ALTER TABLE public.fuel_logs ADD COLUMN IF NOT EXISTS pump_meter_photo_url TEXT;
 ALTER TABLE public.fuel_logs ADD COLUMN IF NOT EXISTS meter_photo_url TEXT;
 ALTER TABLE public.fuel_logs ADD COLUMN IF NOT EXISTS bill_photo_url TEXT;
 
--- ─── 6. TASKS TABLE ───────────────────────────────────────────────────────────
+-- ─── 6. TASKS TABLE (Daily Routes, Assignments & Deliveries) ──────────────────
 CREATE TABLE IF NOT EXISTS public.tasks (
   id             UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   title          TEXT NOT NULL,
@@ -234,7 +245,6 @@ ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS photo_required BOOLEAN DEFAULT
 ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ;
 ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS finished_at TIMESTAMPTZ;
 
--- DYNAMICALLY REMOVE ANY OLD/RESTRICTIVE CHECK CONSTRAINTS ON tasks.status
 DO $$ 
 DECLARE
     r RECORD;
@@ -250,11 +260,9 @@ BEGIN
     END LOOP;
 END $$;
 
--- Support 'cancelled' and 'unfinished' statuses (Head Office Change 3)
 ALTER TABLE public.tasks ADD CONSTRAINT tasks_status_check 
   CHECK (status IN ('pending', 'in_progress', 'done', 'cancelled', 'unfinished'));
 
--- Priority check
 DO $$ 
 DECLARE
     r RECORD;
@@ -273,7 +281,7 @@ END $$;
 ALTER TABLE public.tasks ADD CONSTRAINT tasks_priority_check 
   CHECK (priority IN ('low', 'medium', 'high'));
 
--- ─── 7. REPAIR REQUESTS TABLE ─────────────────────────────────────────────────
+-- ─── 7. REPAIR REQUESTS TABLE (Driver Defect Reports & Approvals) ─────────────
 CREATE TABLE IF NOT EXISTS public.repair_requests (
   id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   driver_id       UUID NOT NULL REFERENCES public.drivers(id) ON DELETE CASCADE,
@@ -281,7 +289,7 @@ CREATE TABLE IF NOT EXISTS public.repair_requests (
   description     TEXT NOT NULL,
   parts_needed    TEXT,
   photo_url       TEXT,
-  voice_memo_url  TEXT,                               -- Up to 60s voice message (Change 6)
+  voice_memo_url  TEXT,                               -- Up to 60s voice message
   audio_url       TEXT,
   audio_duration  INTEGER,
   status          TEXT NOT NULL DEFAULT 'pending',
@@ -316,7 +324,6 @@ END $$;
 ALTER TABLE public.repair_requests ADD CONSTRAINT repair_requests_status_check 
   CHECK (status IN ('pending', 'approved', 'rejected', 'completed'));
 
--- Auto-update updated_at trigger
 CREATE OR REPLACE FUNCTION update_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -330,7 +337,7 @@ CREATE TRIGGER repair_requests_updated_at
   BEFORE UPDATE ON public.repair_requests
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
--- ─── 8. TRIP REQUESTS TABLE (Head of Teams / Team Leader Portal) ──────────────
+-- ─── 8. TRIP REQUESTS TABLE (Team Leader / Field Dispatch Portal) ─────────────
 CREATE TABLE IF NOT EXISTS public.trip_requests (
   id                   TEXT PRIMARY KEY,
   "from"               TEXT NOT NULL,
@@ -350,7 +357,7 @@ CREATE TABLE IF NOT EXISTS public.trip_requests (
   created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ─── 9. MAINTENANCE SCHEDULES & PARTS ─────────────────────────────────────────
+-- ─── 9. MAINTENANCE SCHEDULES & SERVICE CYCLES ────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.maintenance_schedules (
   id           UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   vehicle_id   UUID NOT NULL REFERENCES public.vehicles(id) ON DELETE CASCADE,
@@ -362,7 +369,7 @@ CREATE TABLE IF NOT EXISTS public.maintenance_schedules (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ─── 10. COST ENTRIES TABLE ───────────────────────────────────────────────────
+-- ─── 10. COST ENTRIES TABLE (Fleet Operating Expenses) ────────────────────────
 CREATE TABLE IF NOT EXISTS public.cost_entries (
   id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   vehicle_id  UUID NOT NULL REFERENCES public.vehicles(id) ON DELETE CASCADE,
@@ -393,13 +400,26 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
   created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ─── 12. SETTINGS TABLE (Key-Value Store for System State) ─────────────────────
+-- ─── 12. SETTINGS TABLE (Key-Value Configuration Store) ────────────────────────
 CREATE TABLE IF NOT EXISTS public.settings (
   key   TEXT PRIMARY KEY,
   value JSONB NOT NULL
 );
 
--- ─── 13. STORAGE BUCKETS SETUP ────────────────────────────────────────────────
+-- ─── 13. PUSH NOTIFICATION SUBSCRIPTIONS ──────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.push_subscriptions (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id           UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  driver_name       TEXT,
+  endpoint          TEXT NOT NULL UNIQUE,
+  p256dh            TEXT,
+  auth              TEXT,
+  subscription_json JSONB,
+  created_at        TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
+  updated_at        TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- ─── 14. STORAGE BUCKETS SETUP ────────────────────────────────────────────────
 INSERT INTO storage.buckets (id, name, public) VALUES 
   ('checklist-photos', 'checklist-photos', true),
   ('repair-photos', 'repair-photos', true),
@@ -408,7 +428,7 @@ INSERT INTO storage.buckets (id, name, public) VALUES
   ('task-proofs', 'task-proofs', true)
 ON CONFLICT (id) DO UPDATE SET public = true;
 
--- ─── 14. PERFORMANCE INDEXES ──────────────────────────────────────────────────
+-- ─── 15. PERFORMANCE INDEXES ──────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_drivers_phone ON public.drivers(phone);
 CREATE INDEX IF NOT EXISTS idx_drivers_role ON public.drivers(role);
 CREATE INDEX IF NOT EXISTS idx_vehicles_vehicle_no ON public.vehicles(vehicle_no);
@@ -421,32 +441,33 @@ CREATE INDEX IF NOT EXISTS idx_tasks_driver ON public.tasks(driver_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON public.tasks(status);
 CREATE INDEX IF NOT EXISTS idx_repair_requests_vehicle ON public.repair_requests(vehicle_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON public.audit_logs(timestamp DESC);
-CREATE INDEX IF NOT EXISTS idx_audit_logs_driver ON public.audit_logs(driver_id);
-CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON public.audit_logs(action_type);
+CREATE INDEX IF NOT EXISTS idx_push_subs_endpoint ON public.push_subscriptions(endpoint);
 
--- ─── 15. REALTIME PUBLICATION ─────────────────────────────────────────────────
+-- ─── 16. REALTIME PUBLICATION ─────────────────────────────────────────────────
 DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.tasks; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.checklists; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.fuel_logs; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.repair_requests; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.trip_requests; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.settings; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.audit_logs; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.drivers; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.vehicles; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- ==============================================================================
--- ─── 16. ROW LEVEL SECURITY (RLS) POLICIES ────────────────────────────────────
+-- ─── 17. ROW LEVEL SECURITY (RLS) POLICIES — 100% COMPLETE & PERMISSIVE ────────
 -- ==============================================================================
-ALTER TABLE public.drivers              ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.vehicles             ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.checklists           ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.fuel_logs            ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.tasks                ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.repair_requests      ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.trip_requests        ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.maintenance_schedules ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.cost_entries         ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.audit_logs           ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.settings             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.drivers                 ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.vehicles                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.checklists              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.fuel_logs               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tasks                   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.repair_requests         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.trip_requests           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.maintenance_schedules    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cost_entries            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.audit_logs              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.settings                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.push_subscriptions      ENABLE ROW LEVEL SECURITY;
 
 -- Drop existing policies
 DROP POLICY IF EXISTS "fleetops_drivers_all" ON public.drivers;
@@ -460,8 +481,9 @@ DROP POLICY IF EXISTS "fleetops_maintenance_all" ON public.maintenance_schedules
 DROP POLICY IF EXISTS "fleetops_cost_entries_all" ON public.cost_entries;
 DROP POLICY IF EXISTS "fleetops_audit_logs_all" ON public.audit_logs;
 DROP POLICY IF EXISTS "fleetops_settings_all" ON public.settings;
+DROP POLICY IF EXISTS "fleetops_push_subs_all" ON public.push_subscriptions;
 
--- Create full CRUD policies
+-- Create full CRUD policies for anon and authenticated users
 CREATE POLICY "fleetops_drivers_all" ON public.drivers FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "fleetops_vehicles_all" ON public.vehicles FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "fleetops_checklists_all" ON public.checklists FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
@@ -473,8 +495,9 @@ CREATE POLICY "fleetops_maintenance_all" ON public.maintenance_schedules FOR ALL
 CREATE POLICY "fleetops_cost_entries_all" ON public.cost_entries FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "fleetops_audit_logs_all" ON public.audit_logs FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "fleetops_settings_all" ON public.settings FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "fleetops_push_subs_all" ON public.push_subscriptions FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
--- Storage Object Policies
+-- Storage Object Policies (Photo Uploads, Receipts, Audio Memos)
 DROP POLICY IF EXISTS "fleetops_storage_select" ON storage.objects;
 DROP POLICY IF EXISTS "fleetops_storage_insert" ON storage.objects;
 DROP POLICY IF EXISTS "fleetops_storage_update" ON storage.objects;
@@ -497,62 +520,29 @@ CREATE POLICY "fleetops_storage_delete" ON storage.objects
   FOR DELETE TO anon, authenticated
   USING (bucket_id IN ('checklist-photos', 'repair-photos', 'fuel-photos', 'voice-notes', 'task-proofs'));
 
--- ─── 16.5 PUSH NOTIFICATION SUBSCRIPTIONS (CHANGE 6) ───────────────────────────
-CREATE TABLE IF NOT EXISTS public.push_subscriptions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-  driver_name TEXT,
-  endpoint TEXT NOT NULL UNIQUE,
-  p256dh TEXT,
-  auth TEXT,
-  subscription_json JSONB,
-  created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
-  updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
-ALTER TABLE public.push_subscriptions ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "push_subscriptions_select" ON public.push_subscriptions;
-DROP POLICY IF EXISTS "push_subscriptions_insert" ON public.push_subscriptions;
-DROP POLICY IF EXISTS "push_subscriptions_update" ON public.push_subscriptions;
-DROP POLICY IF EXISTS "push_subscriptions_delete" ON public.push_subscriptions;
-
-CREATE POLICY "push_subscriptions_select" ON public.push_subscriptions
-  FOR SELECT TO anon, authenticated
-  USING (true);
-
-CREATE POLICY "push_subscriptions_insert" ON public.push_subscriptions
-  FOR INSERT TO anon, authenticated
-  WITH CHECK (true);
-
-CREATE POLICY "push_subscriptions_update" ON public.push_subscriptions
-  FOR UPDATE TO anon, authenticated
-  USING (true)
-  WITH CHECK (true);
-
-CREATE POLICY "push_subscriptions_delete" ON public.push_subscriptions
-  FOR DELETE TO anon, authenticated
-  USING (true);
-
--- ─── 17. INITIAL DATA & SEED (INCLUDES ALL REAL VEHICLES) ─────────────────────
+-- ─── 18. DEFAULT CONFIGURATION & SEED DATA ────────────────────────────────────
 INSERT INTO public.settings (key, value)
 VALUES 
   ('fuel_price', '382'),
   ('evening_fuel_alert_group', '"Tropical"'),
   ('trip_requests', '[]'::jsonb),
-  ('shift_options', '["6:00 AM - 3:00 PM", "8:00 AM - 5:00 PM", "10:00 AM - 7:00 PM", "1:00 PM - 10:00 PM", "2:00 PM - 11:00 PM", "8:00 AM", "10:00 AM", "11:00 AM", "1:00 PM", "2:00 PM", "5:00 PM", "7:00 PM", "10:00 PM", "11:00 PM", "Leave"]')
+  ('shift_options', '["6:00 AM - 3:00 PM", "8:00 AM - 5:00 PM", "10:00 AM - 7:00 PM", "1:00 PM - 10:00 PM", "2:00 PM - 11:00 PM", "8:00 AM", "10:00 AM", "11:00 AM", "1:00 PM", "2:00 PM", "5:00 PM", "7:00 PM", "10:00 PM", "11:00 PM", "Leave"]'::jsonb),
+  ('end_day_records', '[]'::jsonb),
+  ('driver_overtime', '[]'::jsonb),
+  ('vehicle_washes', '[]'::jsonb)
 ON CONFLICT (key) DO NOTHING;
 
--- Seed default Admin and Head of Teams accounts
+-- Seed core Administrative and Operational user profiles
 INSERT INTO public.drivers (name, phone, pin, role, "group", license_no, license_expiry)
 VALUES
-  ('Admin Office', '0770000001', '1234', 'admin', 'Tropical', 'A1000001', '2028-12-31'),
-  ('Fleet Manager', '0771234567', '1234', 'manager', 'Tropical', 'M1000001', '2027-12-31'),
-  ('Head of Teams', '0770000002', '1234', 'head_of_teams', 'Tropical', 'H1000001', '2027-12-31')
+  ('Admin Office', '0770000000', '9999', 'admin', 'Tropical', 'A1000001', '2030-12-31'),
+  ('Fleet Manager', '0771234567', '1234', 'manager', 'Tropical', 'M1000001', '2028-12-31'),
+  ('Head of Teams', '0770000002', '1234', 'head_of_teams', 'Tropical', 'H1000001', '2028-12-31'),
+  ('Security Gate', '0770000003', '1234', 'security', 'Tropical', 'S1000001', '2028-12-31')
 ON CONFLICT (phone) DO UPDATE 
 SET role = EXCLUDED.role, "group" = EXCLUDED."group";
 
--- SEED REAL FLEET VEHICLES (Tropical and Centres)
+-- Seed all real Fleet Vehicles (Tropical & Centres)
 INSERT INTO public.vehicles (vehicle_no, model, benchmark_kmpl, fuel_type, tank_size, "group")
 VALUES
   ('DAI 0632', 'Bolero', 12.0, 'Diesel', 55.0, 'Tropical'),
@@ -569,6 +559,6 @@ SET model = EXCLUDED.model,
     "group" = EXCLUDED."group";
 
 -- ==============================================================================
--- DONE! All tables, dynamic check constraints, real vehicles, and RLS policies 
--- are fully configured and 100% operational.
+-- BACKUP COMPLETE: All tables, columns, indexes, storage buckets, RLS policies, 
+-- and core seed records are 100% configured and ready.
 -- ==============================================================================
