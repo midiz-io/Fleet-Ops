@@ -12,10 +12,11 @@ import { useToast } from "@/hooks/use-toast";
 import { NumberPlateScanner } from "@/components/number-plate-scanner";
 import { logAuditEvent } from "@/lib/audit-logger";
 import { useAuth } from "@/contexts/AuthContext";
+import { DriverProfileModal } from "@/components/manager/driver-profile-modal";
 import { 
   Car, Plus, Pencil, Trash2, ListTodo, AlertTriangle, 
   Sparkles, Fuel, Droplet, Clock, CheckCircle2, X, AlertCircle,
-  Wrench, History, Copy, RotateCcw, Calendar, Check, DollarSign
+  Wrench, History, Copy, RotateCcw, Calendar, Check, DollarSign, User, FileText
 } from "lucide-react";
 import { differenceInDays, parseISO, format, isToday } from "date-fns";
 
@@ -75,6 +76,7 @@ export function ManagerVehiclesTab() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<VehicleForm>(emptyVehicleForm);
   const [profileVehicleId, setProfileVehicleId] = useState<string | null>(null);
+  const [selectedDriverProfileId, setSelectedDriverProfileId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [fixOdoVehicle, setFixOdoVehicle] = useState<Vehicle | null>(null);
   const [fixOdoKm, setFixOdoKm] = useState("");
@@ -287,10 +289,10 @@ export function ManagerVehiclesTab() {
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => setProfileVehicleId(v.id)}
-                      className="p-1.5 hover:bg-secondary rounded-lg text-muted-foreground hover:text-foreground"
-                      title="Vehicle Profile & Tasks Today"
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary/15 text-primary hover:bg-primary/25 border border-primary/30 text-xs font-bold transition-all shadow-sm"
+                      title="View Vehicle Profile & Specs"
                     >
-                      <ListTodo className="w-4 h-4 text-primary" />
+                      <Car className="w-3.5 h-3.5" /> Vehicle Profile
                     </button>
                     <button
                       onClick={() => openEdit(v)}
@@ -328,7 +330,19 @@ export function ManagerVehiclesTab() {
                   </div>
                   <div>
                     <span className="text-muted-foreground">Driver:</span>{" "}
-                    <span className="font-medium text-foreground">{driver?.name || "Unassigned"}</span>
+                    {driver ? (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDriverProfileId(driver.id)}
+                        className="font-bold text-primary hover:underline inline-flex items-center gap-1 text-xs cursor-pointer"
+                        title={`View ${driver.name}'s Driver Profile`}
+                      >
+                        <User className="w-3 h-3" />
+                        <span>{driver.name}</span>
+                      </button>
+                    ) : (
+                      <span className="font-medium text-foreground">Unassigned</span>
+                    )}
                   </div>
                   <div>
                     <span className="text-muted-foreground">Benchmark:</span>{" "}
@@ -508,6 +522,14 @@ export function ManagerVehiclesTab() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Driver Profile Modal from Vehicles Tab */}
+      {selectedDriverProfileId && (
+        <DriverProfileModal
+          driverId={selectedDriverProfileId}
+          onClose={() => setSelectedDriverProfileId(null)}
+        />
       )}
 
       {/* Vehicle Profile Modal with Tasks Today & Overlap Warning */}

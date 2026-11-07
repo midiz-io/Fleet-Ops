@@ -686,16 +686,20 @@ export async function performSystemHardReset(
     if (onStepProgress) onStepProgress("Wiping checklists, fuel logs and daily tasks...");
 
     // Operational tables to clear
-    const wipeTasks = [
-      supabase.from("checklists").delete().not("id", "is", null),
-      supabase.from("fuel_logs").delete().not("id", "is", null),
-      supabase.from("tasks").delete().not("id", "is", null),
-      supabase.from("repair_requests").delete().not("id", "is", null),
-      supabase.from("trip_requests").delete().not("id", "is", null),
-      supabase.from("cost_entries").delete().not("id", "is", null),
-      supabase.from("audit_logs").delete().not("id", "is", null),
-      supabase.from("push_subscriptions").delete().not("id", "is", null),
+    const wipeTables = [
+      "checklists",
+      "fuel_logs",
+      "tasks",
+      "repair_requests",
+      "trip_requests",
+      "cost_entries",
+      "audit_logs",
+      "push_subscriptions",
     ];
+
+    const wipeTasks: Promise<any>[] = wipeTables.map(tbl => 
+      (supabase.from(tbl as any) as any).delete().not("id", "is", null)
+    );
 
     await Promise.allSettled(wipeTasks);
 

@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useDrivers } from "@/hooks/use-drivers";
 import { useVehicles } from "@/hooks/use-vehicles";
-import { useShifts } from "@/hooks/use-shifts";
+import { useShifts, DEFAULT_SHIFT_OPTIONS } from "@/hooks/use-shifts";
 import { useTasks, DriverTask, timeStringToMinutes } from "@/hooks/use-tasks";
 import { useChecklists } from "@/hooks/use-checklists";
 import { useEndDays } from "@/hooks/use-end-days";
@@ -48,8 +48,13 @@ export function ManagerShiftTab() {
   const [setShiftModal, setSetShiftModal] = useState<{
     open: boolean;
     driver: any | null;
+    shiftDate: string;
     startTime: string;
     endTime: string;
+    selectedPreset: string;
+    isLeave: boolean;
+    isDayOff: boolean;
+    applyToDefault: boolean;
     daysOff: number[]; // 0=Sun, 1=Mon, ..., 6=Sat
     leaveStartDate: string;
     leaveEndDate: string;
@@ -58,8 +63,13 @@ export function ManagerShiftTab() {
   }>({
     open: false,
     driver: null,
+    shiftDate: format(new Date(), "yyyy-MM-dd"),
     startTime: "08:00",
     endTime: "17:00",
+    selectedPreset: "8:00 AM - 5:00 PM",
+    isLeave: false,
+    isDayOff: false,
+    applyToDefault: true,
     daysOff: [0], // Default Sun off
     leaveStartDate: "",
     leaveEndDate: "",
@@ -67,10 +77,14 @@ export function ManagerShiftTab() {
     saving: false,
   });
 
-  const openSetShiftModal = (driver: any) => {
-    const currentShift = shifts?.[driver.id]?.shift || "8:00 AM - 5:00 PM";
+  const openSetShiftModal = (driver: any, targetDate?: string) => {
+    const dateToUse = targetDate || format(new Date(), "yyyy-MM-dd");
+    const currentShift = getDriverShiftForDate(driver.id, dateToUse) || shifts?.[driver.id]?.shift || "8:00 AM - 5:00 PM";
     let start = "08:00";
     let end = "17:00";
+    let isLeave = currentShift === "Leave";
+    let isDayOff = currentShift === "No shift assigned" || currentShift.toLowerCase().includes("off");
+
     const m = currentShift.match(/(\d{1,2}):(\d{2})?\s*(am|pm)?\s*-\s*(\d{1,2}):(\d{2})?\s*(am|pm)?/i);
     if (m) {
       let h1 = parseInt(m[1], 10);
@@ -89,8 +103,13 @@ export function ManagerShiftTab() {
     setSetShiftModal({
       open: true,
       driver,
+      shiftDate: dateToUse,
       startTime: start,
       endTime: end,
+      selectedPreset: currentShift,
+      isLeave,
+      isDayOff,
+      applyToDefault: true,
       daysOff: [0],
       leaveStartDate: "",
       leaveEndDate: "",
@@ -113,11 +132,29 @@ export function ManagerShiftTab() {
         return `${h}:${m} ${ampm}`;
       };
 
-      const shiftStr = `${formatTimeAmPm(setShiftModal.startTime)} - ${formatTimeAmPm(setShiftModal.endTime)}`;
+      let shiftStr = "";
+      if (setShiftModal.isLeave) {
+        shiftStr = "Leave";
+      } else if (setShiftModal.isDayOff) {
+        shiftStr = "No shift assigned";
+      } else {
+        shiftStr = `${formatTimeAmPm(setShiftModal.startTime)} - ${formatTimeAmPm(setShiftModal.endTime)}`;
+      }
+
+      // 1. Update date-specific shift for selected date
       await updateShift.mutateAsync({
         driverId: setShiftModal.driver.id,
         shift: shiftStr,
+        date: setShiftModal.shiftDate,
       });
+
+      // 2. Also update ongoing default shift if checked
+      if (setShiftModal.applyToDefault) {
+        await updateShift.mutateAsync({
+          driverId: setShiftModal.driver.id,
+          shift: shiftStr,
+        });
+      }
 
       // If leave dates entered, schedule leave for that period
       if (setShiftModal.leaveStartDate && setShiftModal.leaveEndDate) {
@@ -1059,27 +1096,186 @@ export function ManagerShiftTab() {
             </div>
 
             <div className="space-y-3.5 text-xs">
-              {/* Working Hours */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-muted-foreground block mb-1">Start Time *</label>
-                  <input
-                    type="time"
-                    value={setShiftModal.startTime}
-                    onChange={e => setSetShiftModal(prev => ({ ...prev, startTime: e.target.value }))}
-                    className="w-full bg-background border border-input rounded-xl px-3 py-2 text-foreground font-mono text-xs focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
+              {/* 1. Date Picker (Item 4: Methana dinyak dnnna ona) */}
+              <div className="bg-secondary/30 p-3 rounded-xl border border-border space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-foreground flex items-center gap-1.5 text-xs">
+                    <Calendar className="w-3.5 h-3.5 text-primary" /> Shift Date * (නියමිත දිනය)
+                  </label>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setSetShiftModal(prev => ({ ...prev, shiftDate: format(new Date(), "yyyy-MM-dd") }))}
+                      className="text-[10px] font-bold px-2 py-0.5 rounded bg-secondary hover:bg-primary/20 hover:text-primary text-muted-foreground border border-border"
+                    >
+                      Today
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSetShiftModal(prev => ({ ...prev, shiftDate: format(addDays(new Date(), 1), "yyyy-MM-dd") }))}
+                      className="text-[10px] font-bold px-2 py-0.5 rounded bg-secondary hover:bg-primary/20 hover:text-primary text-muted-foreground border border-border"
+                    >
+                      Tomorrow
+                    </button>
+                  </div>
                 </div>
-                <div>
-                  <label className="font-bold text-muted-foreground block mb-1">End Time *</label>
+                <input
+                  type="date"
+                  value={setShiftModal.shiftDate}
+                  onChange={e => setSetShiftModal(prev => ({ ...prev, shiftDate: e.target.value }))}
+                  className="w-full bg-background border border-input rounded-xl px-3 py-2 text-foreground font-mono text-xs focus:outline-none focus:ring-1 focus:ring-primary font-bold"
+                />
+                <label className="flex items-center gap-2 text-[11px] text-muted-foreground cursor-pointer pt-0.5">
                   <input
-                    type="time"
-                    value={setShiftModal.endTime}
-                    onChange={e => setSetShiftModal(prev => ({ ...prev, endTime: e.target.value }))}
-                    className="w-full bg-background border border-input rounded-xl px-3 py-2 text-foreground font-mono text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                    type="checkbox"
+                    checked={setShiftModal.applyToDefault}
+                    onChange={e => setSetShiftModal(prev => ({ ...prev, applyToDefault: e.target.checked }))}
+                    className="rounded border-input text-primary focus:ring-primary w-3.5 h-3.5"
                   />
-                </div>
+                  <span>Also set as ongoing regular shift for this driver</span>
+                </label>
               </div>
+
+              {/* 2. Pre-Configured Shift Options (Item 4: Kalin ara option walin hadala tiyena shift tika) */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-muted-foreground uppercase tracking-wide text-xs">
+                    Shift Preset Options (ලබා ගත හැකි ෂිෆ්ට් විකල්ප) *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowOptionsModal(true)}
+                    className="text-[10px] text-primary hover:underline font-semibold"
+                  >
+                    + Manage Presets
+                  </button>
+                </div>
+
+                {/* Quick clickable options chips */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-36 overflow-y-auto p-1.5 bg-secondary/20 rounded-xl border border-border/60">
+                  {(shiftOptions || DEFAULT_SHIFT_OPTIONS).map(opt => {
+                    const isSelected = setShiftModal.selectedPreset === opt && !setShiftModal.isLeave && !setShiftModal.isDayOff;
+                    return (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => {
+                          if (opt === "Leave") {
+                            setSetShiftModal(prev => ({ ...prev, selectedPreset: opt, isLeave: true, isDayOff: false }));
+                          } else if (opt === "No shift assigned" || opt.toLowerCase().includes("off")) {
+                            setSetShiftModal(prev => ({ ...prev, selectedPreset: opt, isLeave: false, isDayOff: true }));
+                          } else {
+                            const m = opt.match(/(\d{1,2}):(\d{2})?\s*(am|pm)?\s*-\s*(\d{1,2}):(\d{2})?\s*(am|pm)?/i);
+                            let start = "08:00";
+                            let end = "17:00";
+                            if (m) {
+                              let h1 = parseInt(m[1], 10);
+                              const m1 = m[2] || "00";
+                              if (m[3]?.toLowerCase() === "pm" && h1 < 12) h1 += 12;
+                              if (m[3]?.toLowerCase() === "am" && h1 === 12) h1 = 0;
+                              start = `${String(h1).padStart(2, "0")}:${m1}`;
+
+                              let h2 = parseInt(m[4], 10);
+                              const m2 = m[5] || "00";
+                              if (m[6]?.toLowerCase() === "pm" && h2 < 12) h2 += 12;
+                              if (m[6]?.toLowerCase() === "am" && h2 === 12) h2 = 0;
+                              end = `${String(h2).padStart(2, "0")}:${m2}`;
+                            }
+                            setSetShiftModal(prev => ({
+                              ...prev,
+                              selectedPreset: opt,
+                              isLeave: false,
+                              isDayOff: false,
+                              startTime: start,
+                              endTime: end,
+                            }));
+                          }
+                        }}
+                        className={`px-2.5 py-1.5 rounded-lg border text-[11px] font-bold text-left transition-all truncate ${
+                          isSelected
+                            ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                            : opt === "Leave" && setShiftModal.isLeave
+                            ? "bg-amber-500 text-black border-amber-500 font-extrabold"
+                            : "bg-background text-foreground border-border hover:border-primary/50"
+                        }`}
+                        title={opt}
+                      >
+                        {opt}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Preset Dropdown Select */}
+                <select
+                  value={setShiftModal.isLeave ? "Leave" : setShiftModal.isDayOff ? "No shift assigned" : setShiftModal.selectedPreset}
+                  onChange={e => {
+                    const val = e.target.value;
+                    if (val === "Leave") {
+                      setSetShiftModal(prev => ({ ...prev, selectedPreset: val, isLeave: true, isDayOff: false }));
+                    } else if (val === "No shift assigned") {
+                      setSetShiftModal(prev => ({ ...prev, selectedPreset: val, isLeave: false, isDayOff: true }));
+                    } else {
+                      const m = val.match(/(\d{1,2}):(\d{2})?\s*(am|pm)?\s*-\s*(\d{1,2}):(\d{2})?\s*(am|pm)?/i);
+                      let start = "08:00";
+                      let end = "17:00";
+                      if (m) {
+                        let h1 = parseInt(m[1], 10);
+                        const m1 = m[2] || "00";
+                        if (m[3]?.toLowerCase() === "pm" && h1 < 12) h1 += 12;
+                        if (m[3]?.toLowerCase() === "am" && h1 === 12) h1 = 0;
+                        start = `${String(h1).padStart(2, "0")}:${m1}`;
+
+                        let h2 = parseInt(m[4], 10);
+                        const m2 = m[5] || "00";
+                        if (m[6]?.toLowerCase() === "pm" && h2 < 12) h2 += 12;
+                        if (m[6]?.toLowerCase() === "am" && h2 === 12) h2 = 0;
+                        end = `${String(h2).padStart(2, "0")}:${m2}`;
+                      }
+                      setSetShiftModal(prev => ({
+                        ...prev,
+                        selectedPreset: val,
+                        isLeave: false,
+                        isDayOff: false,
+                        startTime: start,
+                        endTime: end,
+                      }));
+                    }
+                  }}
+                  className="w-full bg-background border border-input rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value="">-- Choose from Pre-configured Options --</option>
+                  {(shiftOptions || DEFAULT_SHIFT_OPTIONS).map(opt => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                  <option value="Leave">🌴 Leave</option>
+                  <option value="No shift assigned">🚫 Off / No Shift</option>
+                </select>
+              </div>
+
+              {/* 3. Custom Working Hours */}
+              {!setShiftModal.isLeave && !setShiftModal.isDayOff && (
+                <div className="grid grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="font-bold text-muted-foreground block mb-1">Start Time *</label>
+                    <input
+                      type="time"
+                      value={setShiftModal.startTime}
+                      onChange={e => setSetShiftModal(prev => ({ ...prev, startTime: e.target.value }))}
+                      className="w-full bg-background border border-input rounded-xl px-3 py-2 text-foreground font-mono text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-muted-foreground block mb-1">End Time *</label>
+                    <input
+                      type="time"
+                      value={setShiftModal.endTime}
+                      onChange={e => setSetShiftModal(prev => ({ ...prev, endTime: e.target.value }))}
+                      className="w-full bg-background border border-input rounded-xl px-3 py-2 text-foreground font-mono text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* Days Off Selector */}
               <div>

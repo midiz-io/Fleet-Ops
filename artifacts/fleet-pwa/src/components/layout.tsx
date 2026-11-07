@@ -279,6 +279,17 @@ export function Layout({ children }: { children: React.ReactNode }) {
             )}
           </div>
           <div className="flex items-center gap-2">
+            {user && (
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-xl bg-secondary/80 border border-border/60 max-w-[140px] truncate" title={`${user.name} (${getRoleDisplayName(user.role)})`}>
+                <div className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-[10px] shrink-0 border border-primary/30">
+                  {user.name.slice(0, 2).toUpperCase()}
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-[11px] font-bold text-foreground truncate leading-tight">{user.name.split(" ")[0]}</span>
+                  <span className="text-[8px] text-primary uppercase font-extrabold leading-none">{getRoleDisplayName(user.role)}</span>
+                </div>
+              </div>
+            )}
             <LanguageToggle />
             {isManager && <NotificationBell />}
             <Button variant="ghost" size="icon" onClick={logout} className="h-8 w-8 text-muted-foreground">

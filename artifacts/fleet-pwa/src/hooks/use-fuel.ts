@@ -69,7 +69,7 @@ export function useCreateFuelLog() {
 
       const payload: any = { ...log, id: assignedId };
       // Assign fallback for original schema
-      payload.odometer = payload.after_meter;
+      // odometer column omitted for database schema compatibility
 
       const { data, error } = await supabase.from("fuel_logs").insert(payload).select().single();
       
@@ -280,9 +280,7 @@ export function useUpdateFuelLog() {
 
       const payload: any = { ...updates };
       delete (payload as any).tempId;
-      if (payload.after_meter !== undefined) {
-        payload.odometer = payload.after_meter;
-      }
+      // odometer omitted
       const { data, error } = await supabase.from("fuel_logs").update(payload).eq("id", targetId).select().single();
       if (error) handleSupabaseError(error);
       return (data || []) as FuelLog[];

@@ -28,7 +28,7 @@ import { supabase } from "@/lib/supabase";
 import { 
   ClipboardCheck, Fuel, Wrench, Car, AlertTriangle, CheckCircle, Clock, 
   TrendingDown, ListTodo, Camera, CheckSquare, Route, ExternalLink, Lock, 
-  ShieldCheck, Sparkles, BellRing, RefreshCw, Gauge, ArrowRight,
+  ShieldCheck, Sparkles, BellRing, RefreshCw, Gauge, ArrowRight, Droplet, User,
   Calendar, CalendarDays, ChevronLeft, ChevronRight, Palmtree, Sun, Moon
 } from "lucide-react";
 import { 
@@ -38,6 +38,7 @@ import {
 } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { VehicleSwitchModal } from "@/components/vehicle-switch-modal";
+import { VehicleWashModal } from "@/components/vehicle-wash-modal";
 import {
   triggerTaskRing,
   requestNotificationPermission,
@@ -76,6 +77,10 @@ export function DriverDashboard() {
   const { data: vehiclesByDriver, isLoading: vLoading } = useVehiclesByDriver(user?.id ?? null);
   const { data: allVehicles } = useVehicles();
   const { data: allDrivers } = useDrivers();
+  const [showWashModal, setShowWashModal] = useState(false);
+  const [showSkipRequestModal, setShowSkipRequestModal] = useState(false);
+  const [skipReason, setSkipReason] = useState("Vehicle was in workshop / mechanical repair");
+  const [submittingSkip, setSubmittingSkip] = useState(false);
   const updateVehicle = useUpdateVehicle();
   const { data: checklists } = useDriverChecklists(user?.id ?? null);
   const { data: allChecklists } = useChecklists();
@@ -254,7 +259,18 @@ export function DriverDashboard() {
   }, [currentDriverMeta]);
 
   // Washing hook for active vehicle
-  const { weeklyCount: washCount, logWash } = useVehicleWashing(assignedVehicle?.id);
+  const { 
+    washSessions, 
+    weeklyCount: washCount = 0, 
+    checkDriverWashCompliance, 
+    requestWashSkip, 
+    logWash,
+    currentWeekStart, 
+    prevWeekStart 
+  } = useVehicleWashing(assignedVehicle?.id);
+
+  const washCompliance = checkDriverWashCompliance(user?.id || "", assignedVehicle?.id);
+  const isWashBlocked = washCompliance.isBlocked;
 
   // Switch Vehicle modal state
   const [switchModalOpen, setSwitchModalOpen] = useState(false);
@@ -614,8 +630,16 @@ export function DriverDashboard() {
     }
   };
 
-  // Start Task with compulsory checklist check (Suggestion 7)
+  // Start Task with compulsory checklist & wash check (Suggestion 7 & Item 1)
   const handleStartTask = (task: DriverTask) => {
+    if (isWashBlocked) {
+      toast({
+        title: "Work Blocked - Wash Incomplete",
+        description: "You must obtain Manager Skip Approval before starting tasks this week.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (!todayChecklist) {
       toast({
         title: "Daily Checklist Compulsory ⚠️",
@@ -736,20 +760,121 @@ export function DriverDashboard() {
         </div>
       )}
 
-      {/* Top Greeting */}
-      <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <p className="text-muted-foreground text-xs">{format(new Date(), "EEEE, MMMM d, yyyy")}</p>
-          <h1 className="text-xl font-bold text-foreground mt-0.5">
-            Good day, {user?.name?.split(" ")[0]}
-          </h1>
+      {/* Driver Profile Card (Item 3: Driver Details Visible) */}
+      <div className="bg-card border border-border rounded-2xl p-4 shadow-sm flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-base shrink-0 border border-primary/30">
+            {user?.name ? user.name.slice(0, 2).toUpperCase() : "DR"}
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-base font-bold text-foreground">{user?.name}</h2>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/15 text-primary border border-primary/25 capitalize">
+                {currentDriverMeta?.group || "Centres"}
+              </span>
+            </div>
+            <div className="flex items-center gap-2.5 text-xs text-muted-foreground mt-0.5 flex-wrap">
+              <span className="font-mono text-foreground font-medium">{user?.phone}</span>
+              <span>&bull;</span>
+              <span>Lic: <strong className="font-mono text-foreground">{currentDriverMeta?.license_no || "—"}</strong></span>
+              {driverLicenseDays !== null && (
+                <span className={`text-[10px] font-bold ${driverLicenseDays < 30 ? "text-amber-400" : "text-emerald-400"}`}>
+                  ({driverLicenseDays < 0 ? "Expired" : `${driverLicenseDays}d left`})
+                </span>
+              )}
+            </div>
+          </div>
         </div>
-        <Link href={`/checklist?type=start&vehicleId=${morningVehicleId || assignedVehicle?.id || availableFreeVehicles[0]?.id || ""}`}>
-          <button className="flex items-center gap-1.5 text-xs font-semibold bg-secondary hover:bg-secondary/80 px-3 py-1.5 rounded-xl border border-border shrink-0 self-start sm:self-auto transition-colors">
-            <ClipboardCheck className="w-3.5 h-3.5 text-primary" /> Checklist
-          </button>
-        </Link>
+
+        <div className="flex items-center gap-2 ml-auto sm:ml-0">
+          <Link 
+            href={isWashBlocked ? "#" : `/checklist?type=start&vehicleId=${morningVehicleId || assignedVehicle?.id || availableFreeVehicles[0]?.id || ""}`}
+            onClick={(e) => {
+              if (isWashBlocked) {
+                e.preventDefault();
+                toast({
+                  title: "Work Blocked - Wash Incomplete",
+                  description: "You must obtain Manager Skip Approval before starting today's checklist.",
+                  variant: "destructive",
+                });
+              }
+            }}
+          >
+            <button 
+              disabled={isWashBlocked}
+              className={`flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl border transition-all ${
+                isWashBlocked
+                  ? "bg-secondary/40 text-muted-foreground border-border opacity-50 cursor-not-allowed"
+                  : "bg-secondary hover:bg-secondary/80 text-foreground border-border active:scale-95"
+              }`}
+            >
+              <ClipboardCheck className="w-3.5 h-3.5 text-primary" /> Checklist
+            </button>
+          </Link>
+        </div>
       </div>
+
+      {/* Wash Requirement Incomplete Work Block Banner (Item 1) */}
+      {isWashBlocked && (
+        <div className="bg-red-500/15 border-2 border-red-500/50 rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-xl animate-in fade-in">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-red-500/25 text-red-400 border border-red-500/40 flex items-center justify-center shrink-0">
+              <AlertTriangle className="w-5 h-5 animate-pulse" />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-sm font-black text-red-200 uppercase tracking-wide">
+                  Work Blocked: Weekly Wash Requirement Not Met
+                </h3>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/30 text-red-200 border border-red-500/40">
+                  Manager Waiver Required
+                </span>
+              </div>
+              <p className="text-xs text-red-100/90 mt-1 leading-relaxed">
+                You completed only <strong className="text-white font-mono">{washCompliance.completedPrevWeek} of 3</strong> required vehicle wash days last week (Week of {washCompliance.prevWeekStart}). Under company policy, washing 3 times per week is compulsory to operate vehicles.
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-black/40 rounded-xl p-3 border border-red-500/30 text-xs">
+            {washCompliance.skipStatus === "pending" ? (
+              <div className="flex items-center gap-2 text-amber-300">
+                <Clock className="w-4 h-4 shrink-0 animate-spin" />
+                <span>
+                  <strong>Skip Request Pending Review:</strong> &ldquo;{washCompliance.skipRequest?.reason}&rdquo;. Waiting for Operations Manager sign-off.
+                </span>
+              </div>
+            ) : washCompliance.skipStatus === "rejected" ? (
+              <div className="space-y-1">
+                <span className="text-red-300 font-bold">Manager has rejected previous skip waiver.</span>
+                <p className="text-muted-foreground text-[11px]">Please call operations or re-submit clarification.</p>
+              </div>
+            ) : (
+              <p className="text-red-200/90 text-[11px]">
+                You cannot start today&apos;s checklist or dispatch routes until the fleet manager approves an exemption for this week.
+              </p>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {washCompliance.skipStatus !== "pending" && (
+              <button
+                type="button"
+                onClick={() => setShowSkipRequestModal(true)}
+                className="bg-red-600 hover:bg-red-500 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-lg shadow-red-950/50 transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer"
+              >
+                <Droplet className="w-3.5 h-3.5" /> Request Manager Skip / Exemption
+              </button>
+            )}
+            <a
+              href="tel:0771234567"
+              className="bg-secondary hover:bg-secondary/80 text-foreground border border-border font-bold text-xs px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5"
+            >
+              📞 Call Fleet Manager Hotline
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* Prominently Highlighted Standout Shift Card (Vibrant Emerald Theme) */}
       <div
@@ -1037,7 +1162,7 @@ export function DriverDashboard() {
               </p>
             </div>
 
-            {/* Wash Counter & Wash Photo Button (Suggestion 6 & 7) */}
+            {/* Wash Counter & Wash Photo Button (Item 1: 3 Days x 5 Photos) */}
             <div className="bg-secondary/60 p-2.5 rounded-xl border border-border flex items-center gap-3">
               <div>
                 <p className="text-[10px] text-muted-foreground uppercase font-bold">Washed This Week</p>
@@ -1050,23 +1175,14 @@ export function DriverDashboard() {
                   </span>
                 </div>
               </div>
-              <input
-                ref={washInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={handleWashPhotoUpload}
-              />
               <button
                 type="button"
-                onClick={() => washInputRef.current?.click()}
-                disabled={uploadingWash}
-                className="bg-primary text-primary-foreground text-xs font-bold px-2.5 py-1.5 rounded-lg flex items-center gap-1 shadow-sm active:scale-95 transition-all"
-                title="Capture wash photo"
+                onClick={() => setShowWashModal(true)}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-sm active:scale-95 transition-all cursor-pointer"
+                title="Vehicle Wash Verification (3 Days x 5 Photos)"
               >
                 <Camera className="w-3.5 h-3.5" />
-                {uploadingWash ? "..." : "Wash Photo"}
+                <span>Wash Photo</span>
               </button>
             </div>
           </div>

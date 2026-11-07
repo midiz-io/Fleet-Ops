@@ -10,6 +10,8 @@ import { sendWhatsAppMessage } from "@/lib/whatsapp";
 import {
   CheckCircle,
   XCircle,
+  Droplet,
+  Sparkles,
   Clock,
   AlertTriangle,
   ShieldCheck,
@@ -25,6 +27,7 @@ import {
   Lock,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
+import { useVehicleWashing, WashSkipRequest } from "@/hooks/use-washing";
 
 export interface EmergencyLeaveRequest {
   id: string;
@@ -48,6 +51,9 @@ export function ManagerApprovalsTab() {
   const safeOvertimes: OvertimeRecord[] = Array.isArray(overtimes) ? overtimes : [];
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { skipRequests = [], reviewWashSkip } = useVehicleWashing();
+  const [washFilter, setWashFilter] = useState<"pending" | "all" | "approved" | "rejected">("pending");
+  const pendingWashSkipCount = skipRequests.filter(r => r.status === "pending").length;
 
   const [filterStatus, setFilterStatus] = useState<"all" | "pending" | "approved" | "rejected">("pending");
   const [editingPinDriverId, setEditingPinDriverId] = useState<string | null>(null);
@@ -247,6 +253,10 @@ export function ManagerApprovalsTab() {
             <p className="text-[10px] font-bold text-muted-foreground uppercase">Pending OT</p>
             <p className="text-base font-extrabold text-primary font-mono">{pendingOTCount}</p>
           </div>
+          <div className="bg-background/80 border border-border rounded-xl px-3 py-2 text-center">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase">Wash Skips</p>
+            <p className="text-base font-extrabold text-blue-400 font-mono">{pendingWashSkipCount}</p>
+          </div>
         </div>
       </div>
 
@@ -393,6 +403,146 @@ export function ManagerApprovalsTab() {
             })}
           </div>
         )}
+      </div>
+
+      {/* SECTION: Weekly Vehicle Wash Skip Requests (Item 1) */}
+      <div className="bg-card border border-border rounded-2xl p-4 md:p-5 space-y-4 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <Droplet className="w-4 h-4 text-primary" />
+              <h3 className="text-sm font-bold text-foreground">Weekly Vehicle Wash Skip Requests</h3>
+              {pendingWashSkipCount > 0 && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30 animate-pulse">
+                  {pendingWashSkipCount} pending review
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Drivers who completed &lt; 3 washes last week must have a Manager waiver approved to work this week.
+            </p>
+          </div>
+
+          {/* Filter Pills */}
+          <div className="flex items-center gap-1 bg-secondary/50 rounded-xl p-1 border border-border/60">
+            {(["pending", "all", "approved", "rejected"] as const).map(st => (
+              <button
+                key={st}
+                onClick={() => setWashFilter(st)}
+                className={`px-3 py-1 text-xs font-bold rounded-lg capitalize transition-all ${
+                  washFilter === st
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {st}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {(() => {
+          const filteredWash = skipRequests.filter(r => {
+            if (washFilter === "all") return true;
+            return r.status === washFilter;
+          });
+
+          if (filteredWash.length === 0) {
+            return (
+              <div className="text-center py-8 text-muted-foreground border border-dashed border-border rounded-xl text-xs space-y-1">
+                <p className="font-semibold">No wash skip requests in this filter.</p>
+                <p className="text-[11px] text-muted-foreground/80">Drivers with &lt; 3 washes who submit a skip waiver appear here for approval.</p>
+              </div>
+            );
+          }
+
+          return (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {filteredWash.map(req => {
+                const isPending = req.status === "pending";
+                return (
+                  <div
+                    key={req.id}
+                    className={`border rounded-2xl p-4 space-y-3 transition-all ${
+                      isPending
+                        ? "bg-card border-blue-500/40 shadow-sm ring-1 ring-blue-500/20"
+                        : req.status === "approved"
+                        ? "bg-secondary/20 border-emerald-500/30"
+                        : "bg-secondary/10 border-border/60 opacity-70"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-xs shrink-0">
+                          {req.driverName.slice(0, 2).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="font-bold text-xs text-foreground flex items-center gap-2">
+                            {req.driverName}
+                            <span className="font-mono text-muted-foreground text-[11px]">({req.vehicleNo || "Fleet Vehicle"})</span>
+                          </p>
+                          <p className="text-[10px] text-muted-foreground">
+                            Target Week: {req.weekStart} &bull; Prev Week Washes: <span className="font-bold text-amber-400 font-mono">{req.prevWeekWashes || 0} of 3</span>
+                          </p>
+                        </div>
+                      </div>
+
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full capitalize border ${
+                          req.status === "approved"
+                            ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                            : req.status === "rejected"
+                            ? "bg-destructive/15 text-destructive border-destructive/30"
+                            : "bg-blue-500/15 text-blue-400 border-blue-500/30"
+                        }`}
+                      >
+                        {req.status}
+                      </span>
+                    </div>
+
+                    <div className="bg-secondary/50 rounded-xl p-2.5 border border-border/60 text-xs space-y-1">
+                      <span className="text-[10px] uppercase font-bold text-muted-foreground block">
+                        Reason for Wash Skip:
+                      </span>
+                      <p className="text-foreground italic">&ldquo;{req.reason}&rdquo;</p>
+                      <span className="text-[10px] text-muted-foreground block pt-0.5">
+                        Submitted: {format(parseISO(req.createdAt), "dd MMM yyyy, h:mm a")}
+                      </span>
+                    </div>
+
+                    {isPending ? (
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => reviewWashSkip.mutate({ requestId: req.id, status: "approved", reviewerName: user?.name || "Manager" })}
+                          disabled={reviewWashSkip.isPending}
+                          className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm active:scale-95 disabled:opacity-50"
+                        >
+                          <Check className="w-3.5 h-3.5" /> Approve Skip & Unlock
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => reviewWashSkip.mutate({ requestId: req.id, status: "rejected", reviewerName: user?.name || "Manager" })}
+                          disabled={reviewWashSkip.isPending}
+                          className="flex-1 bg-secondary hover:bg-destructive/15 text-muted-foreground hover:text-destructive border border-border font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
+                        >
+                          <X className="w-3.5 h-3.5" /> Reject
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="text-[11px] text-muted-foreground flex items-center justify-between pt-1">
+                        <span>Reviewed by: {req.reviewedBy || "Manager"}</span>
+                        {req.reviewedAt && (
+                          <span>{format(parseISO(req.reviewedAt), "MMM d, h:mm a")}</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
       </div>
 
       {/* SECTION 2: Pending Overtime Approvals */}

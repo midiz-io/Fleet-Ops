@@ -551,7 +551,18 @@ export function ManagerDashboard() {
               {isAdmin ? "Full Fleet & Approval Control" : "Fleet Operations Control"}
             </p>
           </div>
-          <div className="ml-auto flex items-center gap-1.5">
+          <div className="ml-auto flex items-center gap-2">
+            {user && (
+              <div className="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-secondary/60 border border-border">
+                <div className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-xs border border-primary/30">
+                  {user.name ? user.name.slice(0, 2).toUpperCase() : "M"}
+                </div>
+                <div className="text-left hidden sm:block">
+                  <p className="text-xs font-bold text-foreground leading-none">{user.name}</p>
+                  <p className="text-[9px] text-muted-foreground mt-0.5">{user.phone}</p>
+                </div>
+              </div>
+            )}
             <span className="text-xs bg-primary/15 text-primary border border-primary/25 px-2 py-0.5 rounded-full font-semibold capitalize">
               {isAdmin ? "Admin" : "Manager"}
             </span>
